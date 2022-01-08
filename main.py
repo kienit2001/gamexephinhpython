@@ -36,7 +36,7 @@ if __name__ == '__main__':
                 screen.blit(picture[color],(x,y))
         pg.display.flip()
 
-    pg.quit()
+    pg.quit()ádvhsavdjkbasjkbdh
 
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
