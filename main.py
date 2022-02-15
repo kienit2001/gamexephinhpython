@@ -1,6 +1,7 @@
 
 import pygame as pg
 import random as rnd
+import copy
 import time
 from dataclasses import dataclass
 
@@ -67,17 +68,17 @@ def object_on_grid_line(character):
             grid[(character.row+n//4)*columns+(character.column+n%4)]=colort
 
 
-def delete_all_rows():
-    fullrows = 0
+def delete_all_filled_row():
+    deleted_rows = 0
     for row in range(rows):
         for column in range(columns):
             if grid[row*columns+column]==0:
                 break
         else:
-            del grid[row*columns :row*columns+column]
+            del grid[row*columns :row*columns+columns]
             grid[0:0] = [0]*columns
-            fullrows +=1
-    return fullrows**2*100
+            deleted_rows +=1
+    return int(100*deleted_rows*(deleted_rows+1)/2)
 
 
 def end_game():
@@ -145,6 +146,87 @@ def set_btn_pos(top, num):
 ########################## Scenes ##########################
 
 
+def game_over_ui(current_score, difficulty):
+    for i in range(10):
+        if current_score > int(high_score_data[difficulty][i*2+1]):
+            r = game_over_ui1()
+            if r == 0:
+                return "Main menu"
+            else:
+                for j in range(9, i, -1):  # --------------------------- ADD NEW HIGH SCORE -----------------------------
+                    high_score_data[difficulty][j*2] = high_score_data[difficulty][(j-1)*2]
+                    high_score_data[difficulty][j*2+1] = high_score_data[difficulty][(j-1)*2+1]
+                high_score_data[difficulty][i*2] = r
+                high_score_data[difficulty][i*2+1] = str(current_score)
+                f = open(f"Data/{difficulty}.hscr", "w")
+                for rec in high_score_data[difficulty]:
+                    f.write(rec+"\n")
+                f.close()
+                print("Save high score complete")
+                return "Main menu"
+    return game_over_ui2(current_score)
+
+
+def game_over_ui1():
+    set_btn_pos(5.5, 2)
+    screen.blit(board2_img, ((screen_width - board2_size[0]) // 2, ui_size * 0.33))
+    text = pg.font.SysFont('Comic Sans MS', int(ui_size / 1.5)).render("GAME OVER", False, (0, 0, 160))
+    screen.blit(text, (screen_width / 2 - ui_size * 2, ui_size * 0.7))
+    text = pg.font.SysFont('Comic Sans MS', int(ui_size / 2)).render("New high score!", False, (0, 125, 255))
+    screen.blit(text, (screen_width / 2 - ui_size * 1.8, ui_size * 2.1))
+    text = font1.render("Enter your name:", False, (0, 0, 0))
+    screen.blit(text, (screen_width / 2 - ui_size * 2.5, ui_size * 3.4))
+    screen.blit(textbar_img, ((screen_width - textbar_size[0]) // 2, ui_size * 3.9))
+    # button
+    btn_text = create_button(['     OK     ', 'Main menu'])
+    s = ''
+
+    while True:
+        button_effect(btn_text)
+        for ev in pg.event.get():
+            if ev.type == pg.KEYDOWN:  # Typing from keyboard
+                k = ev.key
+                if len(s) < 16:
+                    if pg.K_a <= k <= pg.K_z or pg.K_0 <= k <= pg.K_9 or k == pg.K_PERIOD or k == pg.K_MINUS:
+                        s += pg.key.name(k).upper()
+                if k == pg.K_BACKSPACE:
+                    s = s[:-1]
+                screen.blit(textbar_img, ((screen_width - textbar_size[0]) // 2, ui_size * 3.9))
+                screen.blit(type_font.render(s, False, (0, 0, 0)), (screen_width / 2 - ui_size * 2.42, ui_size * 4.1))
+            if ev.type == pg.MOUSEBUTTONDOWN:
+                r = check_button([1, 2])
+                if r == 1:
+                    return s
+                if r == 2:
+                    return 0
+            if ev.type == pg.QUIT:
+                pg.quit()
+                exit()
+        pg.display.flip()
+
+
+def game_over_ui2(current_score):
+    set_btn_pos(5, 2)
+    screen.blit(board2_img, ((screen_width - board2_size[0]) // 2, ui_size * 0.33))
+    text = pg.font.SysFont('Comic Sans MS', int(ui_size / 1.5)).render("GAME OVER", False, (0, 0, 160))
+    screen.blit(text, (screen_width / 2 - ui_size * 2, ui_size * 0.8))
+    text = pg.font.SysFont('Comic Sans MS', int(ui_size / 2)).render("Score: "+str(current_score), False, (0, 125, 255))
+    screen.blit(text, (screen_width / 2 - ui_size * 1.4, ui_size * 2.8))
+    # button
+    btn_text = create_button(['Play again', 'Main menu'])
+
+    while True:
+        button_effect(btn_text)
+        for ev in pg.event.get():
+            if ev.type == pg.MOUSEBUTTONDOWN:
+                r = check_button([1, 2])
+                if r == 1:
+                    return "New game"
+                if r == 2:
+                    return "Main menu"
+            if ev.type == pg.QUIT:
+                return "Exit game"
+        pg.display.flip()
 
 def select_difficulty():
     set_btn_pos(3.2, 3)
@@ -159,9 +241,10 @@ def select_difficulty():
             if ev.type == pg.MOUSEBUTTONDOWN:
                 d = check_button([1, 2, 3])
                 if 1 <= d <= 3:
-                    return d
+                    return d-1
             if ev.type == pg.QUIT:
-                return "Exit game"
+                pg.quit()
+                exit()
         pg.display.flip()
 
 
@@ -178,7 +261,6 @@ def load_game():
     btn_text = create_button(['Load game', 'Main menu'])
     s = ''
     dat = []
-    l = []
     err = False
 
     while True:
@@ -196,16 +278,20 @@ def load_game():
             if ev.type == pg.MOUSEBUTTONDOWN:
                 r = check_button([1,2])
                 if r == 1:
-                    f = open(f"Data/{s}.dat", "r")
-                    dat = f.readlines()
-                    if len(dat) != 7:
+                    try:
+                        f = open(f"Data/{s}.dat", "r")
+                    except FileNotFoundError:
+                        err = True
+                        break
+                    dat = f.readlines()  # ----------------------------- LOAD GAME -------------------------------------
+                    if len(dat) != 8:
                         err = True
                         f.close()
                         break
-                    for i in (1,2,4,5):
+                    for i in (1,2,4,5,6):
                         dat[i] = int(dat[i][:-1])
-                    dat[6] += "."
-                    for i in (0,3,6):
+                    dat[7] += "."
+                    for i in (0,3,7):
                         dat[i] = list(dat[i][:-1])
                         for j in range(len(dat[i])):
                             dat[i][j] = int(dat[i][j])
@@ -215,6 +301,7 @@ def load_game():
                     return 0
             if ev.type == pg.QUIT:
                 pg.quit()
+                exit()
         if err:
             screen.blit(error_text, (screen_width / 2 - ui_size * 2.5, ui_size * 4.1))
         pg.display.flip()
@@ -254,7 +341,8 @@ def save_game():
                 return "Exit game"
         pg.display.flip()
 
-def high_score():
+
+def high_score_ui(difficulty):  # 0 = easy, 1 = normal, 2 = hard
     set_btn_pos(7.2, 1)
     x_column1 = screen_width / 2 - ui_size * 0.9
     x_column2 = screen_width / 2 + ui_size * 1.9
@@ -262,26 +350,29 @@ def high_score():
     myfont2 = pg.font.SysFont('Consolas', int (ui_size / 3))
     highscore_text = big_font.render("HIGH SCORE", False, (0, 0, 160))
     screen.blit(highscore_text, (screen_width / 2 - ui_size * 2.2, ui_size * 0.8))
-    name_text = font1.render("Name", False, (0, 0, 0))
-    screen.blit(name_text, (x_column1 - ui_size * 0.4 , ui_size * 2))
-    score_text = font1.render("Score", False, (0, 0, 0))
-    screen.blit(score_text, (x_column2 - ui_size * 0.5, ui_size * 2))
+    name_text = font1.render("Name", False, (0, 125, 255))
+    screen.blit(name_text, (x_column1 - ui_size * 0.4 , ui_size * 2.1))
+    score_text = font1.render("Score", False, (0, 125, 255))
+    screen.blit(score_text, (x_column2 - ui_size * 0.5, ui_size * 2.1))
 
     #line & button
-    pg.draw.line(screen, (0, 0, 0), (screen_width/2-ui_size*2.7, ui_size*2.6),
-                                    (screen_width/2+ui_size*2.7, ui_size*2.6), 3)
-    pg.draw.line(screen, (0, 0, 0), (screen_width/2+ui_size*1, ui_size*2),
-                                    (screen_width/2+ui_size*1, ui_size*6.8), 3)
+    pg.draw.line(screen, (0, 0, 0), (screen_width/2-ui_size*2.6, ui_size*2.6),
+                                    (screen_width/2+ui_size*2.6, ui_size*2.6), 3)
+    pg.draw.line(screen, (0, 0, 0), (screen_width/2+ui_size*1, ui_size*2.1),
+                                    (screen_width/2+ui_size*1, ui_size*6.7), 3)
     btn_text = create_button(['    Back    '])
 
-    name = ["Unknow", "Player1", "Player2", "p", "t", "EV", "John", "David", "J", "DD"]
-    hscore = ["1000", "900", "800", "700", "600", "500", "400", "300", "200", "100"]
+    name, high_score = [], []
+
+    for i in range(len(high_score_data[difficulty])//2):
+        name.append(high_score_data[difficulty][i*2])
+        high_score.append(high_score_data[difficulty][i*2+1])
 
     for i in range(len(name)):
-        screen.blit(myfont2.render(name[i], False, (0,0,0)),
-                                                    (x_column1 - ui_size*0.09*len(name[i]), ui_size * (2.8 + i*0.4)))
-        screen.blit(myfont2.render(hscore[i], False, (0,0,0)),
-                                                    (x_column2 - ui_size*0.1*len(hscore[i]), ui_size * (2.8 + i*0.4)))
+        screen.blit(myfont2.render(name[i], False, (0, 0, 0)),
+                                                (x_column1 - ui_size*0.09*len(name[i]), ui_size * (2.75 + i*0.4)))
+        screen.blit(myfont2.render(high_score[i], False, (0, 0, 0)),
+                                                (x_column2 - ui_size*0.1*len(high_score[i]), ui_size * (2.75 + i*0.4)))
 
     while True:
         button_effect(btn_text)
@@ -317,8 +408,6 @@ def main_menu():
 
 def game_ui_init():
     set_btn_pos(2.5, 3)
-    # border
-    border = (pg.transform.scale(pg.image.load('Image/border.png'), (sq_size * (columns + 2), sq_size * (rows + 2))))
     screen.blit(border, (10, 10))
     # text
     myfont = pg.font.SysFont('Comic Sans MS', 35)
@@ -331,11 +420,11 @@ def game_ui_init():
     screen.blit(btn2_img[0], (430, 380))  # Pause button
 
 
-def game(character, next_show, speed, score, grid):
+def game(character, next_show, speed, score, grid, difficulty):
     te_surf = screen.subsurface((40, 40, sq_size * columns, sq_size * rows))
 
     myfont3 = pg.font.SysFont('Comic Sans MS', 30)
-    textsurface5 = myfont3.render('End game', False, (0, 255, 255))
+    #textsurface5 = myfont3.render('End game', False, (0, 255, 255))
 
     # button
     pausebtn_pos = [430,380,530,480]
@@ -364,14 +453,16 @@ def game(character, next_show, speed, score, grid):
                     return "Exit game"
                 if ev.type == tetromino_dowm:
                     if not character.update(1, 0):  # new tetromino
+                        pg.time.set_timer(tetromino_dowm, 0)  # stop temporarily
                         speed = int(speed * 0.99+0.3)  # => min speed = 30
                         print(speed)
-                        pg.time.set_timer(tetromino_dowm, speed)
                         object_on_grid_line(character)
                         character = next_show
                         next = rnd.choice(tetrominos)
-                        next_show = tetromino(next)
-                        score += delete_all_rows()
+                        next_show = copy.deepcopy(tetromino(next))
+                        score += delete_all_filled_row()
+                        pg.time.delay(200)
+                        pg.time.set_timer(tetromino_dowm, speed)
 
                 # if even.type == speedup:
                 #
@@ -406,10 +497,9 @@ def game(character, next_show, speed, score, grid):
                                             game_ui_init()
                                             end = True
                                         if i == 2:
-                                            s = save_game()
+                                            s = save_game()  # ---------------------- SAVE GAME ------------------------
                                             if s:
                                                 f = open(f"Data/{s}.dat", "w")
-                                                # f.writelines([character, next_show, next, str(speed), str(score)])
                                                 for t in character.tetro:
                                                     f.write(str(t))
                                                 f.write(f"\n{character.row}")
@@ -417,7 +507,8 @@ def game(character, next_show, speed, score, grid):
                                                 for t in next_show.tetro:
                                                     f.write(str(t))
                                                 f.write(f"\n{speed}")
-                                                f.write(f"\n{score}\n")
+                                                f.write(f"\n{score}")
+                                                f.write(f"\n{difficulty}\n")
                                                 for i in range(columns*rows):
                                                     f.write(str(grid[i]))
                                                 f.close()
@@ -460,18 +551,11 @@ def game(character, next_show, speed, score, grid):
                 te_surf.blit(te_img[color], (x, y))
 
         if kt == True:  # end game
-            for ev in pg.event.get():
-                if ev.type == pg.QUIT:
-                    return "Exit game"
-            pg.draw.rect(screen, (0, 255, 0), (100, 200, 150, 50), 2)
-            screen.blit(textsurface5, (110, 200))
+            pg.time.delay(500)
+            return game_over_ui(score, difficulty)
             #
             #
-            #      vẽ new game them even kich chuot vao new game  xong gửi tao
-            #      không tạo def new game
-            #      vẽ thêm pause continue (sư kiện bắt chuột vào )       #
-            #      vẽ thêm pause continue (sư kiện bắt chuột vào )       #
-            #      vẽ ô điểm cao nhất
+            #
             #
             #
         pg.display.flip()
@@ -507,22 +591,38 @@ if __name__ == '__main__':
     #Image
     btn1_img, btn2_img = [0]*2, [0]*2
     for i in range(2):
-        btn1_img[i] = pg.transform.scale(pg.image.load(f'Image/b1-{i}.png'), (ui_size * 2.5, ui_size))
-        btn2_img[i] = pg.transform.scale(pg.image.load(f'Image/b2-{i}.png'), (100, 100))
+        btn1_img[i] = pg.transform.smoothscale(pg.image.load(f'Image/b1-{i}.png'), (ui_size * 2.5, ui_size))
+        btn2_img[i] = pg.transform.smoothscale(pg.image.load(f'Image/b2-{i}.png'), (100, 100))
+    border = (pg.transform.smoothscale(pg.image.load('Image/border.png'), (sq_size * (columns+2), sq_size * (rows+2))))
     board_size, board2_size = (ui_size*4, ui_size*5.6), (ui_size*6, ui_size*8.4)
-    board_img = pg.transform.scale(pg.image.load('Image/board.png'), board_size)
-    board2_img = pg.transform.scale(pg.image.load('Image/board.png'), board2_size)
+    board_img = pg.transform.smoothscale(pg.image.load('Image/board.png'), board_size)
+    board2_img = pg.transform.smoothscale(pg.image.load('Image/board.png'), board2_size)
     textbar_size = (ui_size*5.2,ui_size*5.2/6)
-    textbar_img = pg.transform.scale(pg.image.load('Image/textbar.png'), textbar_size)  #smoothscale
+    textbar_img = pg.transform.smoothscale(pg.image.load('Image/textbar.png'), textbar_size)
     te_img = []
     for i in range(8):
-        te_img.append(pg.transform.scale(pg.image.load(f'Image/t{i}.png'), (sq_size, sq_size)))
-        # print(pg.image.load(f'T_{i}.gif'),(distance,distance))
+        te_img.append(pg.transform.smoothscale(pg.image.load(f'Image/t{i}.png'), (sq_size, sq_size)))
 
     #Font
     font1 = pg.font.SysFont('Comic Sans MS', int(ui_size / 3))
     type_font = pg.font.SysFont('Consolas', int(ui_size / 1.8))
     big_font = pg.font.SysFont('Comic Sans MS', int(ui_size / 1.5))
+
+    #Data
+    high_score_data = []
+    data = []
+    for s in (0, 1, 2):
+        try:
+            f = open(f"Data/{s}.hscr")
+            data = f.readlines()
+            for i in range(len(data)):
+                data[i] = data[i][:-1]
+        except FileNotFoundError:  # Sample high score
+            for i in range(10):
+                data.append(f"Player{i+1}")
+                data.append(str(1000-i*100))
+        high_score_data.append(data)
+        data = []
 
     scene = "Main menu"
 
@@ -534,17 +634,17 @@ if __name__ == '__main__':
             next = rnd.choice(tetrominos)
             character = tetromino(next)
             next = rnd.choice(tetrominos)
-            next_show = tetromino(next)
+            next_show = copy.deepcopy(tetromino(next))
             grid = [0] * columns * rows
             score = 0
             d = select_difficulty()
-            if d == 1:
+            if d == 0:
                 speed = 350
-            elif d == 2:
+            elif d == 1:
                 speed = 250
-            elif d == 3:
+            elif d == 2:
                 speed = 150
-            scene = game(character, next_show, speed, score, grid)
+            scene = game(character, next_show, speed, score, grid, d)
         elif scene == "Load game":
             data = load_game()
             if data != 0:
@@ -552,16 +652,17 @@ if __name__ == '__main__':
                 character = tetromino(data[0])
                 character.row = data[1]
                 character.column = data[2]
-                next_show = tetromino(data[3])
+                next_show = copy.deepcopy(tetromino(data[3]))
                 next = rnd.choice(tetrominos)
                 speed = data[4]
                 score = data[5]
-                grid = data[6]
-                scene = game(character, next_show, speed, score, grid)
+                d = data[6]
+                grid = data[7]
+                scene = game(character, next_show, speed, score, grid, d)
             else:
                 scene = "Main menu"
         elif scene == "High score":
-            scene = high_score()
+            scene = high_score_ui(select_difficulty())
         elif scene == "Exit game":
             break
 
